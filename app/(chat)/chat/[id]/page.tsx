@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { auth } from '@/app/(auth)/auth';
 import { Chat } from '@/components/chat';
-import { getChatById, getMessagesByChatId } from '@/lib/db/queries';
+import { getChatById, getMessagesWithReasoningByChatId } from '@/lib/db/queries';
 import { convertToUIMessages } from '@/lib/utils';
 import { DataStreamHandler } from '@/components/data-stream-handler';
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
@@ -44,7 +44,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     }
 
     console.log(`Loading messages for chat: ${id}`);
-    const messagesFromDb = await getMessagesByChatId(id);
+    const messagesFromDb = await getMessagesWithReasoningByChatId(id);
     console.log(`Found ${messagesFromDb.length} messages for chat: ${id}`);
 
     // Convert messages to the format expected by the Chat component

@@ -12,6 +12,7 @@ export type Message = Database['public']['Tables']['Message']['Row'];
 export type Vote = Database['public']['Tables']['Vote']['Row'];
 export type Document = Database['public']['Tables']['Document']['Row'];
 export type Suggestion = Database['public']['Tables']['Suggestion']['Row'];
+export type ReasoningChain = Database['public']['Tables']['ReasoningChain']['Row'];
 
 // Add new types for our subscription system
 export type Subscription = Database['public']['Tables']['subscriptions']['Row'];
@@ -152,6 +153,58 @@ export async function saveMessages({ messages }: { messages: Array<Message> }) {
   }
 }
 
+/**
+ * Saves reasoning chain steps for a message
+ */
+export async function saveReasoningChain({ 
+  messageId, 
+  reasoningSteps 
+}: { 
+  messageId: string; 
+  reasoningSteps: string | string[];
+}) {
+  try {
+    // Handle different formats of reasoning steps
+    let steps: { messageId: string; step_number: number; reasoning: string }[] = [];
+    
+    if (typeof reasoningSteps === 'string') {
+      // If it's a single string, save as one step
+      steps = [{
+        messageId,
+        step_number: 1,
+        reasoning: reasoningSteps
+      }];
+    } else if (Array.isArray(reasoningSteps)) {
+      // If it's an array, save as multiple steps
+      steps = reasoningSteps.map((reasoning, index) => ({
+        messageId,
+        step_number: index + 1,
+        reasoning
+      }));
+    }
+    
+    if (steps.length === 0) return { success: true };
+    
+    // Insert the reasoning chain steps
+    const { error } = await supabaseAdmin
+      .from('ReasoningChain')
+      .insert(steps);
+    
+    if (error) throw error;
+    
+    // Update the message to indicate it has reasoning
+    await supabaseAdmin
+      .from('Message')
+      .update({ has_reasoning: true })
+      .eq('id', messageId);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to save reasoning chain to database');
+    throw error;
+  }
+}
+
 export async function getMessagesByChatId(id: string) {
   try {
     const { data, error } = await supabaseAdmin
@@ -164,6 +217,56 @@ export async function getMessagesByChatId(id: string) {
     return data || [];
   } catch (error) {
     console.error('Failed to get messages from database');
+    throw error;
+  }
+}
+
+/**
+ * Gets messages with their reasoning chains
+ */
+export async function getMessagesWithReasoningByChatId(id: string) {
+  try {
+    // Get all messages for the chat
+    const { data: messages, error: messagesError } = await supabaseAdmin
+      .from('Message')
+      .select()
+      .eq('chatId', id)
+      .order('createdAt', { ascending: true });
+    
+    if (messagesError) throw messagesError;
+    if (!messages || messages.length === 0) return [];
+    
+    // Get reasoning chains for all messages that have reasoning
+    const messagesWithReasoning = messages.filter(m => m.has_reasoning);
+    if (messagesWithReasoning.length === 0) return messages;
+    
+    const messageIds = messagesWithReasoning.map(m => m.id);
+    const { data: reasoningChains, error: reasoningError } = await supabaseAdmin
+      .from('ReasoningChain')
+      .select()
+      .in('messageId', messageIds)
+      .order('step_number', { ascending: true });
+    
+    if (reasoningError) throw reasoningError;
+    
+    // Combine messages with their reasoning chains
+    const messagesWithReasoningChains = messages.map(message => {
+      if (!message.has_reasoning) return message;
+      
+      const reasoning = reasoningChains
+        ?.filter(r => r.messageId === message.id)
+        .map(r => r.reasoning)
+        .join('\n\n');
+      
+      return {
+        ...message,
+        reasoning
+      };
+    });
+    
+    return messagesWithReasoningChains;
+  } catch (error) {
+    console.error('Failed to get messages with reasoning from database');
     throw error;
   }
 }

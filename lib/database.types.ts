@@ -54,7 +54,7 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "Chat_userId_fkey"
+            foreignKeyName: "Chat_userId_User_id_fk"
             columns: ["userId"]
             referencedRelation: "User"
             referencedColumns: ["id"]
@@ -68,13 +68,15 @@ export interface Database {
           role: string
           content: string
           createdAt: string
+          has_reasoning: boolean
         }
         Insert: {
-          id: string
+          id?: string
           chatId: string
           role: string
           content: string
           createdAt?: string
+          has_reasoning?: boolean
         }
         Update: {
           id?: string
@@ -82,47 +84,73 @@ export interface Database {
           role?: string
           content?: string
           createdAt?: string
+          has_reasoning?: boolean
         }
         Relationships: [
           {
-            foreignKeyName: "Message_chatId_fkey"
+            foreignKeyName: "Message_chatId_Chat_id_fk"
             columns: ["chatId"]
             referencedRelation: "Chat"
             referencedColumns: ["id"]
           }
         ]
       }
-      Vote: {
+      ReasoningChain: {
         Row: {
           id: string
-          chatId: string
           messageId: string
-          isUpvoted: boolean
+          step_number: number
+          reasoning: string
           createdAt: string
         }
         Insert: {
           id?: string
-          chatId: string
           messageId: string
-          isUpvoted: boolean
+          step_number: number
+          reasoning: string
           createdAt?: string
         }
         Update: {
           id?: string
-          chatId?: string
           messageId?: string
-          isUpvoted?: boolean
+          step_number?: number
+          reasoning?: string
           createdAt?: string
         }
         Relationships: [
           {
-            foreignKeyName: "Vote_chatId_fkey"
+            foreignKeyName: "ReasoningChain_messageId_Message_id_fk"
+            columns: ["messageId"]
+            referencedRelation: "Message"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      Vote: {
+        Row: {
+          chatId: string
+          messageId: string
+          isUpvoted: boolean
+        }
+        Insert: {
+          chatId: string
+          messageId: string
+          isUpvoted: boolean
+        }
+        Update: {
+          chatId?: string
+          messageId?: string
+          isUpvoted?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "Vote_chatId_Chat_id_fk"
             columns: ["chatId"]
             referencedRelation: "Chat"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "Vote_messageId_fkey"
+            foreignKeyName: "Vote_messageId_Message_id_fk"
             columns: ["messageId"]
             referencedRelation: "Message"
             referencedColumns: ["id"]
@@ -156,7 +184,7 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "Document_userId_fkey"
+            foreignKeyName: "Document_userId_User_id_fk"
             columns: ["userId"]
             referencedRelation: "User"
             referencedColumns: ["id"]
@@ -187,7 +215,7 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "Suggestion_documentId_fkey"
+            foreignKeyName: "Suggestion_documentId_Document_id_fk"
             columns: ["documentId"]
             referencedRelation: "Document"
             referencedColumns: ["id"]
@@ -236,7 +264,7 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "subscriptions_user_id_fkey"
+            foreignKeyName: "subscriptions_user_id_User_id_fk"
             columns: ["user_id"]
             referencedRelation: "User"
             referencedColumns: ["id"]
@@ -267,7 +295,7 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "user_balance_user_id_fkey"
+            foreignKeyName: "user_balance_user_id_User_id_fk"
             columns: ["user_id"]
             referencedRelation: "User"
             referencedColumns: ["id"]
@@ -304,19 +332,19 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "usage_user_id_fkey"
+            foreignKeyName: "usage_user_id_User_id_fk"
             columns: ["user_id"]
             referencedRelation: "User"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "usage_chat_id_fkey"
+            foreignKeyName: "usage_chat_id_Chat_id_fk"
             columns: ["chat_id"]
             referencedRelation: "Chat"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "usage_message_id_fkey"
+            foreignKeyName: "usage_message_id_Message_id_fk"
             columns: ["message_id"]
             referencedRelation: "Message"
             referencedColumns: ["id"]
@@ -350,7 +378,7 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "daily_usage_user_id_fkey"
+            foreignKeyName: "daily_usage_user_id_User_id_fk"
             columns: ["user_id"]
             referencedRelation: "User"
             referencedColumns: ["id"]
@@ -358,17 +386,9 @@ export interface Database {
         ]
       }
     }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      [_ in never]: never
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
+    Views: {}
+    Functions: {}
+    Enums: {}
+    CompositeTypes: {}
   }
 } 

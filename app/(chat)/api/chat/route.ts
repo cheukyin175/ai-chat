@@ -16,7 +16,8 @@ import {
   trackUsage,
   saveChat,
   getChatById,
-  saveMessages
+  saveMessages,
+  saveReasoningChain
 } from '@/lib/db/queries';
 import { createOpenRouterClient, extractOpenRouterUsage } from '@/lib/ai/openrouter';
 import { getOpenRouterModelId } from '@/lib/ai/models';
@@ -270,31 +271,37 @@ export async function POST(req: Request) {
             }
           }
           
-          // For reasoning models, store reasoning as a separate message with special prefix
+          // For reasoning models, store reasoning in the new ReasoningChain table
           if (isReasoningModelEnabled && reasoningText) {
-            // Save reasoning as a separate message with special prefix
-            const reasoningMessage: DatabaseMessage = {
+            // Save the final answer message first
+            const assistantMessage: DatabaseMessage = {
               id: uuidv4(),
               role: 'assistant',
-              // Use a prefix that we can detect in the frontend
-              content: `__REASONING__${reasoningText}`,
+              content: completionText,
               chatId: chatIdString,
               createdAt: new Date().toISOString()
             };
             
-            await saveMessages({ messages: [reasoningMessage] });
+            // Save the message to get an ID
+            await saveMessages({ messages: [assistantMessage] });
+            
+            // Now save the reasoning chain linked to this message
+            await saveReasoningChain({
+              messageId: assistantMessage.id,
+              reasoningSteps: reasoningText
+            });
+          } else {
+            // Save final answer as a normal message without reasoning
+            const assistantMessage: DatabaseMessage = {
+              id: uuidv4(),
+              role: 'assistant',
+              content: completionText,
+              chatId: chatIdString,
+              createdAt: new Date().toISOString()
+            };
+            
+            await saveMessages({ messages: [assistantMessage] });
           }
-
-          // Save final answer as a normal message
-          const assistantMessage: DatabaseMessage = {
-            id: uuidv4(),
-            role: 'assistant',
-            content: completionText,
-            chatId: chatIdString,
-            createdAt: new Date().toISOString()
-          };
-          
-          await saveMessages({ messages: [assistantMessage] });
         } catch (saveResponseError) {
           console.error('Error saving assistant response:', saveResponseError);
         }

@@ -1,0 +1,277 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Manual Migration</title>
+</head>
+<body>
+  <h1>Manual Migration</h1>
+  <p>Please copy the SQL below and execute it in the Supabase SQL Editor:</p>
+  <textarea style="width: 100%; height: 300px;">
+-- Migration: 0005_reasoning_chain_complete.sql
+-- Enable UUID extension if not already enabled
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Check if tables exist before attempting to create them
+DO $$ 
+BEGIN
+  -- Create User table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'User') THEN
+    CREATE TABLE "User" (
+      "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      "email" TEXT UNIQUE NOT NULL,
+      "password" TEXT,
+      "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  END IF;
+
+  -- Create Chat table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'Chat') THEN
+    CREATE TABLE "Chat" (
+      "id" UUID PRIMARY KEY,
+      "userId" UUID NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      "title" TEXT NOT NULL,
+      "visibility" TEXT NOT NULL DEFAULT 'private',
+      "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  END IF;
+
+  -- Create Message table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'Message') THEN
+    CREATE TABLE "Message" (
+      "id" UUID PRIMARY KEY,
+      "chatId" UUID NOT NULL REFERENCES "Chat"("id") ON DELETE CASCADE,
+      "role" TEXT NOT NULL,
+      "content" TEXT NOT NULL,
+      "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  END IF;
+
+  -- Add has_reasoning column to Message table if it doesn't exist
+  IF NOT EXISTS (
+    SELECT FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'Message' AND column_name = 'has_reasoning'
+  ) THEN
+    ALTER TABLE "Message"
+    ADD COLUMN "has_reasoning" BOOLEAN DEFAULT FALSE;
+  END IF;
+
+  -- Create ReasoningChain table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'ReasoningChain') THEN
+    CREATE TABLE "ReasoningChain" (
+      "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      "messageId" UUID NOT NULL REFERENCES "Message"("id") ON DELETE CASCADE,
+      "step_number" INTEGER NOT NULL,
+      "reasoning" TEXT NOT NULL,
+      "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      UNIQUE("messageId", "step_number")
+    );
+  END IF;
+
+  -- Create Vote table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'Vote') THEN
+    CREATE TABLE "Vote" (
+      "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      "chatId" UUID NOT NULL REFERENCES "Chat"("id") ON DELETE CASCADE,
+      "messageId" UUID NOT NULL REFERENCES "Message"("id") ON DELETE CASCADE,
+      "isUpvoted" BOOLEAN NOT NULL,
+      "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      UNIQUE("chatId", "messageId")
+    );
+  END IF;
+
+  -- Create Document table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'Document') THEN
+    CREATE TABLE "Document" (
+      "id" UUID PRIMARY KEY,
+      "userId" UUID NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      "title" TEXT NOT NULL,
+      "kind" TEXT NOT NULL,
+      "content" TEXT NOT NULL,
+      "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  END IF;
+
+  -- Create Suggestion table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'Suggestion') THEN
+    CREATE TABLE "Suggestion" (
+      "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      "documentId" UUID NOT NULL REFERENCES "Document"("id") ON DELETE CASCADE,
+      "documentCreatedAt" TIMESTAMP WITH TIME ZONE NOT NULL,
+      "content" TEXT NOT NULL,
+      "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  END IF;
+
+  -- Create subscriptions table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'subscriptions') THEN
+    CREATE TABLE "subscriptions" (
+      "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      "user_id" UUID NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      "stripe_customer_id" TEXT,
+      "stripe_subscription_id" TEXT,
+      "price_id" TEXT NOT NULL DEFAULT 'price_free',
+      "plan_type" TEXT NOT NULL DEFAULT 'free',
+      "status" TEXT NOT NULL DEFAULT 'active',
+      "current_period_start" TIMESTAMP WITH TIME ZONE,
+      "current_period_end" TIMESTAMP WITH TIME ZONE,
+      "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  END IF;
+
+  -- Create user_balance table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'user_balance') THEN
+    CREATE TABLE "user_balance" (
+      "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      "user_id" UUID NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      "balance_usd" DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+      "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  END IF;
+
+  -- Create usage table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'usage') THEN
+    CREATE TABLE "usage" (
+      "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      "user_id" UUID NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      "chat_id" UUID REFERENCES "Chat"("id") ON DELETE CASCADE,
+      "message_id" UUID REFERENCES "Message"("id") ON DELETE CASCADE,
+      "tokens_used" INTEGER NOT NULL DEFAULT 0,
+      "cost_usd" DECIMAL(10, 4) NOT NULL DEFAULT 0.0000,
+      "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  END IF;
+
+  -- Create daily_usage table if it doesn't exist
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'daily_usage') THEN
+    CREATE TABLE "daily_usage" (
+      "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      "user_id" UUID NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      "date" DATE NOT NULL DEFAULT CURRENT_DATE,
+      "requests_count" INTEGER NOT NULL DEFAULT 0,
+      "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      UNIQUE("user_id", "date")
+    );
+  END IF;
+
+  -- Create indexes if they don't exist
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_chat_userId') THEN
+    CREATE INDEX "idx_chat_userId" ON "Chat"("userId");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_message_chatId') THEN
+    CREATE INDEX "idx_message_chatId" ON "Message"("chatId");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_vote_chatId') THEN
+    CREATE INDEX "idx_vote_chatId" ON "Vote"("chatId");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_vote_messageId') THEN
+    CREATE INDEX "idx_vote_messageId" ON "Vote"("messageId");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_document_userId') THEN
+    CREATE INDEX "idx_document_userId" ON "Document"("userId");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_suggestion_documentId') THEN
+    CREATE INDEX "idx_suggestion_documentId" ON "Suggestion"("documentId");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_subscriptions_user_id') THEN
+    CREATE INDEX "idx_subscriptions_user_id" ON "subscriptions"("user_id");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_subscriptions_status') THEN
+    CREATE INDEX "idx_subscriptions_status" ON "subscriptions"("status");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_user_balance_user_id') THEN
+    CREATE INDEX "idx_user_balance_user_id" ON "user_balance"("user_id");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_usage_user_id') THEN
+    CREATE INDEX "idx_usage_user_id" ON "usage"("user_id");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_usage_chat_id') THEN
+    CREATE INDEX "idx_usage_chat_id" ON "usage"("chat_id");
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_daily_usage_user_id_date') THEN
+    CREATE INDEX "idx_daily_usage_user_id_date" ON "daily_usage"("user_id", "date");
+  END IF;
+
+  -- Index for reasoning chain
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_reasoning_chain_messageId') THEN
+    CREATE INDEX "idx_reasoning_chain_messageId" ON "ReasoningChain"("messageId");
+  END IF;
+
+  -- Create function for auto-updating updated_at timestamps if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'update_updated_at_column') THEN
+    CREATE OR REPLACE FUNCTION update_updated_at_column()
+    RETURNS TRIGGER AS $$
+    BEGIN
+       NEW.updated_at = NOW();
+       RETURN NEW;
+    END;
+    $$ language 'plpgsql';
+  END IF;
+
+  -- Create triggers for updating updated_at columns
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_subscriptions_updated_at') THEN
+    CREATE TRIGGER update_subscriptions_updated_at
+    BEFORE UPDATE ON "subscriptions"
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_user_balance_updated_at') THEN
+    CREATE TRIGGER update_user_balance_updated_at
+    BEFORE UPDATE ON "user_balance"
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_daily_usage_updated_at') THEN
+    CREATE TRIGGER update_daily_usage_updated_at
+    BEFORE UPDATE ON "daily_usage"
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+  END IF;
+
+  -- Create function for initializing new user subscriptions if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'initialize_user_subscription') THEN
+    CREATE OR REPLACE FUNCTION initialize_user_subscription()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      -- Create free subscription for new user
+      INSERT INTO "subscriptions" (user_id, price_id, plan_type, status)
+      VALUES (NEW.id, 'price_free', 'free', 'active');
+      
+      -- Create zero balance for new user
+      INSERT INTO "user_balance" (user_id, balance_usd)
+      VALUES (NEW.id, 0.00);
+      
+      RETURN NEW;
+    END;
+    $$ language 'plpgsql';
+  END IF;
+
+  -- Create trigger for initializing subscriptions for new users
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'on_user_created') THEN
+    CREATE TRIGGER on_user_created
+    AFTER INSERT ON "User"
+    FOR EACH ROW EXECUTE PROCEDURE initialize_user_subscription();
+  END IF;
+
+  -- Add comments to tables
+  COMMENT ON TABLE "ReasoningChain" IS 'Stores reasoning chain steps for messages, linked to the Message table';
+
+END $$; 
+</textarea>
+  <p>After executing the SQL, you can close this page.</p>
+</body>
+</html>
+      

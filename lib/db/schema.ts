@@ -9,6 +9,7 @@ import {
   primaryKey,
   foreignKey,
   boolean,
+  integer,
 } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('User', {
@@ -41,6 +42,7 @@ export const message = pgTable('Message', {
   role: varchar('role').notNull(),
   content: text('content').notNull(),
   createdAt: timestamp('createdAt').notNull(),
+  has_reasoning: boolean('has_reasoning').default(false),
 });
 
 export type Message = InferSelectModel<typeof message>;
@@ -113,3 +115,15 @@ export const suggestion = pgTable(
 );
 
 export type Suggestion = InferSelectModel<typeof suggestion>;
+
+export const reasoningChain = pgTable('ReasoningChain', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  messageId: uuid('messageId')
+    .notNull()
+    .references(() => message.id, { onDelete: 'cascade' }),
+  step_number: integer('step_number').notNull(),
+  reasoning: text('reasoning').notNull(),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+});
+
+export type ReasoningChain = InferSelectModel<typeof reasoningChain>;

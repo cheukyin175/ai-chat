@@ -12,6 +12,7 @@ import { customAlphabet } from 'nanoid';
 import { v4 as uuidv4 } from 'uuid';
 
 import type { Message as DBMessage, Document } from '@/lib/db/schema';
+import { Message as ExtendedMessage } from './message-types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -62,8 +63,8 @@ function addToolMessageToChat({
   messages,
 }: {
   toolMessage: CoreToolMessage;
-  messages: Array<Message>;
-}): Array<Message> {
+  messages: Array<ExtendedMessage>;
+}): Array<ExtendedMessage> {
   return messages.map((message) => {
     if (message.toolInvocations) {
       return {
@@ -90,15 +91,40 @@ function addToolMessageToChat({
   });
 }
 
+// Define types for message content parts
+interface TextContent {
+  type: 'text';
+  text: string;
+}
+
+interface ToolCallContent {
+  type: 'tool-call';
+  toolCallId: string;
+  toolName: string;
+  args: any;
+}
+
+interface ReasoningContent {
+  type: 'reasoning';
+  reasoning: string;
+}
+
+type MessageContentPart = TextContent | ToolCallContent | ReasoningContent;
+
 export function convertToUIMessages(
   messages: Array<DBMessage>,
-): Array<Message> {
-  return messages.reduce((chatMessages: Array<Message>, message) => {
+): Array<ExtendedMessage> {
+  return messages.reduce((chatMessages: Array<ExtendedMessage>, message) => {
+    // Handle tools messages separately
     if (message.role === 'tool') {
-      return addToolMessageToChat({
-        toolMessage: message as CoreToolMessage,
-        messages: chatMessages,
-      });
+      // Safe cast with type checking
+      if (typeof message.content !== 'string' && Array.isArray(message.content)) {
+        return addToolMessageToChat({
+          toolMessage: message as unknown as CoreToolMessage,
+          messages: chatMessages,
+        });
+      }
+      // Fall back to normal message handling if content is not in expected format
     }
 
     let textContent = '';
@@ -108,27 +134,45 @@ export function convertToUIMessages(
     if (typeof message.content === 'string') {
       textContent = message.content;
     } else if (Array.isArray(message.content)) {
-      for (const content of message.content) {
-        if (content.type === 'text') {
-          textContent += content.text;
-        } else if (content.type === 'tool-call') {
-          toolInvocations.push({
-            state: 'call',
-            toolCallId: content.toolCallId,
-            toolName: content.toolName,
-            args: content.args,
-          });
-        } else if (content.type === 'reasoning') {
-          reasoning = content.reasoning;
+      // Handle array content by iterating and checking types
+      const contentParts = message.content as unknown as MessageContentPart[];
+      for (const content of contentParts) {
+        if (content && typeof content === 'object') {
+          if (content.type === 'text') {
+            textContent += content.text;
+          } else if (content.type === 'tool-call') {
+            toolInvocations.push({
+              state: 'call',
+              toolCallId: content.toolCallId,
+              toolName: content.toolName,
+              args: content.args,
+            });
+          } else if (content.type === 'reasoning') {
+            reasoning = content.reasoning;
+          }
         }
       }
     }
+    
+    // Check for the different ways reasoning might be stored
+    
+    // 1. If the message has a reasoning property directly, use it
+    if (message && typeof message === 'object' && 'reasoning' in message && message.reasoning) {
+      reasoning = message.reasoning as string;
+    }
+    
+    // 2. Check for has_reasoning flag from the database
+    const hasReasoningFlag = message && 
+      typeof message === 'object' && 
+      'has_reasoning' in message && 
+      !!message.has_reasoning;
 
     chatMessages.push({
       id: message.id,
-      role: message.role as Message['role'],
+      role: message.role as ExtendedMessage['role'],
       content: textContent,
       reasoning,
+      has_reasoning: hasReasoningFlag,
       toolInvocations,
       createdAt: new Date(message.createdAt),
     });
@@ -188,7 +232,7 @@ export function sanitizeResponseMessages({
   );
 }
 
-export function sanitizeUIMessages(messages: Array<Message>): Array<Message> {
+export function sanitizeUIMessages(messages: Array<ExtendedMessage>): Array<ExtendedMessage> {
   const messagesBySanitizedToolInvocations = messages.map((message) => {
     if (message.role !== 'assistant') return message;
 
@@ -221,7 +265,7 @@ export function sanitizeUIMessages(messages: Array<Message>): Array<Message> {
   );
 }
 
-export function getMostRecentUserMessage(messages: Array<Message>) {
+export function getMostRecentUserMessage(messages: Array<ExtendedMessage>) {
   return messages.length > 0 ? messages[messages.length - 1] : null;
 }
 

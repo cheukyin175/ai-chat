@@ -1,4 +1,4 @@
-import { Message } from 'ai';
+import { Message } from '@/lib/message-types';
 import { PreviewMessage, ThinkingMessage } from './message';
 import { useScrollToBottom } from './use-scroll-to-bottom';
 import { Overview } from './overview';
@@ -19,6 +19,8 @@ interface MessagesProps {
   chatModelId: string;
   scrollToBottom: React.RefObject<HTMLDivElement>;
   isLoading: boolean;
+  streamingReasoning?: string | null;
+  isReasoningStreaming?: boolean;
 }
 
 export function PureMessages({
@@ -33,6 +35,8 @@ export function PureMessages({
   chatModelId,
   scrollToBottom,
   isLoading,
+  streamingReasoning,
+  isReasoningStreaming,
 }: MessagesProps) {
   const isMessageEmpty = messages.length === 0;
   const isSomethingBeingGenerated = isLoading || status === 'streaming';
@@ -59,6 +63,8 @@ export function PureMessages({
           setMessages={setMessages}
           reload={reload}
           isReadonly={isReadonly}
+          streamingReasoning={index === messages.length - 1 ? streamingReasoning : undefined}
+          isReasoningStreaming={index === messages.length - 1 ? isReasoningStreaming : false}
         />
       ))}
 
@@ -77,6 +83,8 @@ export const Messages = memo(PureMessages, (prevProps, nextProps) => {
   if (prevProps.messages.length !== nextProps.messages.length) return false;
   if (!equal(prevProps.messages, nextProps.messages)) return false;
   if (!equal(prevProps.votes, nextProps.votes)) return false;
+  if (prevProps.streamingReasoning !== nextProps.streamingReasoning) return false;
+  if (prevProps.isReasoningStreaming !== nextProps.isReasoningStreaming) return false;
 
   return true;
 });

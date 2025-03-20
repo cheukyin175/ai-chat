@@ -1,6 +1,7 @@
 'use client';
 
-import type { ChatRequestOptions, Message } from 'ai';
+import type { ChatRequestOptions } from 'ai';
+import { Message } from '@/lib/message-types';
 import cx from 'classnames';
 import { AnimatePresence, motion } from 'framer-motion';
 import { memo, useState } from 'react';
@@ -19,6 +20,19 @@ import { MessageEditor } from './message-editor';
 import { DocumentPreview } from './document-preview';
 import { MessageReasoning } from './message-reasoning';
 
+// Add this check to safely handle reasoning within the Message component
+const hasReasoning = (message: Message): boolean => {
+  return (
+    message && 
+    (
+      // Check for the new has_reasoning property from database
+      ('has_reasoning' in message && !!message.has_reasoning) ||
+      // Or check if reasoning exists directly on the message
+      ('reasoning' in message && !!message.reasoning)
+    )
+  );
+};
+
 const PurePreviewMessage = ({
   chatId,
   message,
@@ -27,6 +41,8 @@ const PurePreviewMessage = ({
   setMessages,
   reload,
   isReadonly,
+  streamingReasoning,
+  isReasoningStreaming,
 }: {
   chatId: string;
   message: Message;
@@ -39,8 +55,14 @@ const PurePreviewMessage = ({
     chatRequestOptions?: ChatRequestOptions,
   ) => Promise<string | null | undefined>;
   isReadonly: boolean;
+  streamingReasoning?: string | null;
+  isReasoningStreaming?: boolean;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
+
+  // Get the reasoning safely - consider streaming reasoning if available
+  const messageReasoning = streamingReasoning || message.reasoning || undefined;
+  const shouldShowReasoning = isReasoningStreaming || hasReasoning(message);
 
   return (
     <AnimatePresence>
@@ -66,9 +88,9 @@ const PurePreviewMessage = ({
           )}
         >
           {message.role === 'assistant' && (
-            <div className="size-8 flex items-center rounded-full justify-center ring-1 shrink-0 ring-border bg-background">
+            <div className="size-10 flex items-center rounded-full justify-center ring-1 shrink-0 ring-border bg-background">
               <div className="translate-y-px">
-                <SparklesIcon size={14} />
+                <SparklesIcon size={18} />
               </div>
             </div>
           )}
@@ -91,10 +113,12 @@ const PurePreviewMessage = ({
               </div>
             )}
 
-            {message.reasoning && (
+            {shouldShowReasoning && (
               <MessageReasoning
                 isLoading={isLoading}
-                reasoning={message.reasoning}
+                reasoning={messageReasoning}
+                isStreaming={isReasoningStreaming}
+                autoExpand={isReasoningStreaming}
               />
             )}
 
@@ -249,6 +273,8 @@ export const PreviewMessage = memo(
     )
       return false;
     if (!equal(prevProps.vote, nextProps.vote)) return false;
+    if (prevProps.streamingReasoning !== nextProps.streamingReasoning) return false;
+    if (prevProps.isReasoningStreaming !== nextProps.isReasoningStreaming) return false;
 
     return true;
   },

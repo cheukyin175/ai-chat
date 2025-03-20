@@ -1,12 +1,12 @@
 'use client';
 
-import type { Attachment, Message } from 'ai';
+import type { Attachment } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { useState, useEffect, useRef } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
-import { fetcher, generateUUID } from '@/lib/utils';
+import { fetcher, generateUUID, sanitizeUIMessages } from '@/lib/utils';
 import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
 import { Messages } from './messages';
@@ -14,17 +14,11 @@ import { VisibilityType } from './visibility-selector';
 import { useArtifactSelector } from '@/hooks/use-artifact';
 import { toast } from 'sonner';
 import { usePathname, useRouter } from 'next/navigation';
+import { Message } from '@/lib/message-types';
 
-// Add interface for reasoning tracking
-interface ReasoningTracker {
-  index: number;
-  reasoning: string;
-}
-
-// Add interface for message processing accumulator
+// Define interface for our message accumulator
 interface MessageAccumulator {
-  messages: Message[];
-  assistantWithReasoning: ReasoningTracker | null;
+  messages: Array<Message>;
 }
 
 export function Chat({
@@ -47,53 +41,8 @@ export function Chat({
   const [isFirstMessage, setIsFirstMessage] = useState(initialMessages.length === 0);
   const [hasRefreshedHistory, setHasRefreshedHistory] = useState(false);
 
-  // Process the initial messages to handle reasoning messages
-  const processedInitialMessages = initialMessages.reduce<MessageAccumulator>((acc, message, index) => {
-    // If this is an assistant message with reasoning format
-    if (message.role === 'assistant' && typeof message.content === 'string' && message.content.startsWith('__REASONING__')) {
-      // Skip this message in the main sequence, it will be handled by the next assistant message
-      const reasoningContent = message.content.substring('__REASONING__'.length);
-      
-      // Look ahead to find the next assistant message that would display this reasoning
-      let nextAssistantMessageIndex = -1;
-      for (let i = index + 1; i < initialMessages.length; i++) {
-        if (initialMessages[i].role === 'assistant') {
-          nextAssistantMessageIndex = i;
-          break;
-        }
-      }
-      
-      // If we found a next assistant message, attach reasoning to it
-      if (nextAssistantMessageIndex >= 0) {
-        // Set the reasoning for the next assistant message
-        acc.assistantWithReasoning = {
-          index: nextAssistantMessageIndex,
-          reasoning: reasoningContent
-        };
-      }
-      
-      // Skip this reasoning message in the main flow
-      return acc;
-    }
-    
-    // Check if this is an assistant message that should have reasoning attached
-    if (message.role === 'assistant' && acc.assistantWithReasoning?.index === index) {
-      // Create a new message with reasoning attached
-      const messageWithReasoning = {
-        ...message,
-        reasoning: acc.assistantWithReasoning.reasoning
-      };
-      
-      // Add to message array and clear the pending reasoning
-      acc.messages.push(messageWithReasoning);
-      acc.assistantWithReasoning = null;
-      return acc;
-    }
-    
-    // Normal messages just get added to the array
-    acc.messages.push(message);
-    return acc;
-  }, { messages: [], assistantWithReasoning: null });
+  // Simply pass the messages through with no special handling
+  const processedInitialMessages = { messages: initialMessages };
 
   const {
     messages,
@@ -135,36 +84,61 @@ export function Chat({
     },
   });
 
-  // Process real-time reasoning from streaming
+  // Add state to track streaming reasoning
+  const [streamingReasoning, setStreamingReasoning] = useState<string | null>(null);
+  const [isReasoningStreaming, setIsReasoningStreaming] = useState(false);
+
+  // Enhanced streaming reasoning handler
   useEffect(() => {
     // Check for reasoning in the streaming message
     if (status === 'streaming' && messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       
+      // Always set streaming state when streaming starts, to trigger expansion
+      if (lastMessage.role === 'assistant') {
+        setIsReasoningStreaming(true);
+      }
+      
       // If we have a reasoning part in the streaming
       if (lastMessage.role === 'assistant' && lastMessage.content && 
-          typeof lastMessage.content === 'object' && 'reasoning' in lastMessage.content) {
+          typeof lastMessage.content === 'object') {
+        
+        let textContent = '';
+        let reasoningContent = '';
+        
+        // Check if this is reasoning/thinking content
+        if ('reasoning' in lastMessage.content) {
+          // @ts-ignore - Reasoning is added by the AI SDK middleware
+          reasoningContent = lastMessage.content.reasoning || '';
+          
+          // Set streaming reasoning state - ensure it's visible immediately
+          setStreamingReasoning(reasoningContent);
+        }
+        
+        // Check for text content
+        if ('text' in lastMessage.content) {
+          // @ts-ignore - Text part is added by the AI SDK middleware 
+          textContent = lastMessage.content.text || '';
+        }
         
         // Create a new message array with the reasoning properly attached
         const updatedMessages = [...messages];
         const lastIndex = updatedMessages.length - 1;
         
-        // Extract reasoning and content text from the streaming parts
-        // @ts-ignore - Reasoning is added by the AI SDK middleware
-        const reasoning = lastMessage.content.reasoning;
-        // @ts-ignore - Text part is added by the AI SDK middleware 
-        const text = lastMessage.content.text || '';
-        
         // Update the message with reasoning property and text content
         updatedMessages[lastIndex] = {
           ...lastMessage,
-          content: text,
-          reasoning,
+          content: textContent,
+          reasoning: reasoningContent,
         };
         
-        // Update messages with the reasoning data
-        setMessages(updatedMessages);
+        // Use proper sanitizing function to ensure message type compatibility
+        setMessages(sanitizeUIMessages(updatedMessages));
       }
+    } else if (status !== 'streaming') {
+      // Reset streaming state when not streaming
+      setStreamingReasoning(null);
+      setIsReasoningStreaming(false);
     }
   }, [messages, status, setMessages]);
 
@@ -238,6 +212,8 @@ export function Chat({
             chatModelId={selectedChatModel}
             scrollToBottom={scrollBottomRef}
             isLoading={status === 'submitted'}
+            streamingReasoning={streamingReasoning}
+            isReasoningStreaming={isReasoningStreaming}
           />
         </div>
 
