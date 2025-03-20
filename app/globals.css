@@ -1,3 +1,5 @@
+@import 'katex/dist/katex.min.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -175,4 +177,22 @@
 
 .suggestion-highlight {
     @apply bg-blue-200 hover:bg-blue-300 dark:hover:bg-blue-400/50 dark:text-blue-50 dark:bg-blue-500/40;
+}
+
+/* KaTeX styling overrides */
+.katex-display {
+    @apply my-4 overflow-x-auto overflow-y-hidden;
+}
+
+.katex {
+    @apply text-current;
+}
+
+.katex-display > .katex {
+    @apply block max-w-full overflow-x-auto overflow-y-hidden;
+}
+
+/* Add a border to display math in dark mode for better visibility */
+.dark .katex-display {
+    @apply border border-zinc-700 rounded-md p-2;
 }

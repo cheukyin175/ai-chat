@@ -4,7 +4,6 @@ import {
   wrapLanguageModel,
 } from 'ai';
 import { openai } from '@ai-sdk/openai';
-import { isTestEnvironment } from '../constants';
 import { openRouterModels } from './models';
 import { createOpenRouterClient } from './openrouter';
 

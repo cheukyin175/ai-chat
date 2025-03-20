@@ -36,6 +36,7 @@ interface DatabaseMessage {
   role: string;
   content: string;
   createdAt: string;
+  has_reasoning: boolean;
 }
 
 // Constants for usage limits
@@ -144,7 +145,8 @@ export async function POST(req: Request) {
               chatId: chatIdString,
               role: msg.role,
               content: contentStr,
-              createdAt: new Date().toISOString()
+              createdAt: new Date().toISOString(),
+              has_reasoning: false
             };
           });
           
@@ -185,7 +187,8 @@ export async function POST(req: Request) {
               chatId: chatIdString,
               role: lastUserMessage.role,
               content: contentStr,
-              createdAt: new Date().toISOString()
+              createdAt: new Date().toISOString(),
+              has_reasoning: false
             }]
           });
         }
@@ -217,15 +220,56 @@ export async function POST(req: Request) {
           model: baseModel,
           middleware: extractReasoningMiddleware({ 
             tagName: 'think',
-            startWithReasoning: false  // Keep reasoning separate from final answer
+            startWithReasoning: false,  // Keep reasoning separate from final answer
+            separator: '\n\n'           // Add clear separation between reasoning steps
           })
         }) 
       : baseModel;
     
+    // Add system message to guide reasoning behavior for reasoning models
+    const messagesWithReasoningGuidance = isReasoningModelEnabled
+      ? [
+          {
+            role: 'system' as const,
+            content: `You are a helpful AI assistant that provides clear, step-by-step reasoning before giving your final answer. 
+            When reasoning:
+            1. Break down your thinking into clear, numbered steps
+            2. Each step should build on the previous one
+            3. Keep your reasoning concise and focused
+            4. End your reasoning with a clear conclusion
+            5. Then provide your final answer
+            
+            Format your response like this:
+            <think>
+            1. First step of reasoning
+            2. Second step of reasoning
+            3. Final step of reasoning
+            </think>
+            
+            Your final answer here.
+
+            Mathematical Notation:
+            - Use LaTeX/KaTeX for mathematical expressions
+            - Inline math expressions should be enclosed in single dollar signs: $E=mc^2$
+            - Block/display math expressions should use double dollar signs: 
+              $$
+              E = mc^2
+              $$
+            - Use proper LaTeX commands for mathematical symbols: \alpha, \beta, \sum, \int, etc.
+            - For chemical equations use: \ce{H2O} format
+            - For dimensional analysis use: \pu{kg.m/s^2} format
+            - Always render fractions with \frac{numerator}{denominator}
+            - Use \begin{equation} and \end{equation} for numbered equations
+            - For matrices use \begin{matrix} and \end{matrix} environments`
+          },
+          ...messages
+        ]
+      : messages;
+    
     // Create the text stream using AI SDK with the OpenRouter provider
     const result = streamText({
       model,
-      messages,
+      messages: messagesWithReasoningGuidance,
       temperature: 0.7,
       maxTokens: 3000,
       onFinish: async (completion) => {
@@ -279,7 +323,8 @@ export async function POST(req: Request) {
               role: 'assistant',
               content: completionText,
               chatId: chatIdString,
-              createdAt: new Date().toISOString()
+              createdAt: new Date().toISOString(),
+              has_reasoning: !!reasoningText
             };
             
             // Save the message to get an ID
@@ -297,7 +342,8 @@ export async function POST(req: Request) {
               role: 'assistant',
               content: completionText,
               chatId: chatIdString,
-              createdAt: new Date().toISOString()
+              createdAt: new Date().toISOString(),
+              has_reasoning: false
             };
             
             await saveMessages({ messages: [assistantMessage] });

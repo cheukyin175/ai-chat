@@ -56,7 +56,39 @@ export function Chat({
     reload,
   } = useChat({
     id,
-    body: { id, selectedChatModel: selectedChatModel },
+    body: { 
+      id, 
+      selectedChatModel: selectedChatModel,
+      // Add system prompts for format and content control
+      system: `You are a helpful AI assistant. Follow these guidelines:
+
+1. Format Control:
+- Always structure your responses with clear paragraphs
+- Use markdown formatting for code blocks, lists, and emphasis
+- Keep responses concise but informative
+- Use bullet points for lists of items
+
+2. Response Structure:
+- Start with a direct answer to the question
+- Follow with supporting details or reasoning
+- End with any relevant caveats or additional context
+- If you are unsure about something, say so
+- unless requested, answer the question in 600 words or less
+
+3. Mathematical Notation:
+- Use LaTeX/KaTeX for mathematical expressions
+- Inline math expressions should be enclosed in single dollar signs: $E=mc^2$
+- Block/display math expressions should use double dollar signs: 
+  $$
+  E = mc^2
+  $$
+- Use proper LaTeX commands for mathematical symbols: \alpha, \beta, \sum, \int, etc.
+- For chemical equations use: \ce{H2O} format
+- For dimensional analysis use: \pu{kg.m/s^2} format
+- Always render fractions with \frac{numerator}{denominator}
+- Use \begin{equation} and \end{equation} for numbered equations
+- For matrices use \begin{matrix} and \end{matrix} environments`
+    },
     initialMessages: processedInitialMessages.messages,
     experimental_throttle: 100,
     sendExtraMessageFields: true,
@@ -88,14 +120,13 @@ export function Chat({
   const [streamingReasoning, setStreamingReasoning] = useState<string | null>(null);
   const [isReasoningStreaming, setIsReasoningStreaming] = useState(false);
 
-  // Enhanced streaming reasoning handler
+  // Watch for streaming messages that contain reasoning
   useEffect(() => {
-    // Check for reasoning in the streaming message
-    if (status === 'streaming' && messages.length > 0) {
+    if (status === 'streaming') {
       const lastMessage = messages[messages.length - 1];
       
-      // Always set streaming state when streaming starts, to trigger expansion
-      if (lastMessage.role === 'assistant') {
+      // Check if this is a new assistant message
+      if (lastMessage.role === 'assistant' && !isReasoningStreaming) {
         setIsReasoningStreaming(true);
       }
       
@@ -109,10 +140,13 @@ export function Chat({
         // Check if this is reasoning/thinking content
         if ('reasoning' in lastMessage.content) {
           // @ts-ignore - Reasoning is added by the AI SDK middleware
-          reasoningContent = lastMessage.content.reasoning || '';
+          const newReasoningContent = lastMessage.content.reasoning || '';
           
-          // Set streaming reasoning state - ensure it's visible immediately
-          setStreamingReasoning(reasoningContent);
+          // Only update if the content has changed to avoid infinite loops
+          if (newReasoningContent !== streamingReasoning) {
+            setStreamingReasoning(newReasoningContent);
+          }
+          reasoningContent = newReasoningContent;
         }
         
         // Check for text content
@@ -126,21 +160,26 @@ export function Chat({
         const lastIndex = updatedMessages.length - 1;
         
         // Update the message with reasoning property and text content
-        updatedMessages[lastIndex] = {
+        const updatedMessage = {
           ...lastMessage,
           content: textContent,
           reasoning: reasoningContent,
         };
         
-        // Use proper sanitizing function to ensure message type compatibility
-        setMessages(sanitizeUIMessages(updatedMessages));
+        // Only update if content or reasoning has changed
+        if (updatedMessage.content !== updatedMessages[lastIndex].content ||
+            updatedMessage.reasoning !== updatedMessages[lastIndex].reasoning) {
+          updatedMessages[lastIndex] = updatedMessage;
+          // Use proper sanitizing function to ensure message type compatibility
+          setMessages(sanitizeUIMessages(updatedMessages));
+        }
       }
-    } else if (status !== 'streaming') {
+    } else {
       // Reset streaming state when not streaming
       setStreamingReasoning(null);
       setIsReasoningStreaming(false);
     }
-  }, [messages, status, setMessages]);
+  }, [messages, status, streamingReasoning, isReasoningStreaming, setMessages]);
 
   // Refresh history on component mount (page reload)
   useEffect(() => {

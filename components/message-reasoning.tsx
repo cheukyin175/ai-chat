@@ -22,9 +22,9 @@ export function MessageReasoning({
   isStreaming = false
 }: MessageReasoningProps) {
   // Always expanded when streaming, otherwise respect autoExpand
-  const [isExpanded, setIsExpanded] = useState(isStreaming || autoExpand);
+  const [isExpanded, setIsExpanded] = useState(autoExpand);
   
-  // Force expansion when streaming starts
+  // Force expansion when streaming starts - only run when isStreaming changes
   useEffect(() => {
     if (isStreaming) {
       setIsExpanded(true);

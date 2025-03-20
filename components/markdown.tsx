@@ -2,6 +2,8 @@ import Link from 'next/link';
 import React, { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { CodeBlock } from './code-block';
 
 const components: Partial<Components> = {
@@ -101,11 +103,17 @@ const components: Partial<Components> = {
   },
 };
 
-const remarkPlugins = [remarkGfm];
+// Add remarkMath and rehypeKatex to the plugins
+const remarkPlugins = [remarkGfm, remarkMath];
+const rehypePlugins = [rehypeKatex];
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
   return (
-    <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
+    <ReactMarkdown 
+      remarkPlugins={remarkPlugins} 
+      rehypePlugins={rehypePlugins} 
+      components={components}
+    >
       {children}
     </ReactMarkdown>
   );
