@@ -1,3 +1,6 @@
+## Try ME!
+if you interested for a demo, you can email, cheukyin175@gmail.com for a deployed link!
+
 ## Features
 
 - [Next.js](https://nextjs.org) App Router
